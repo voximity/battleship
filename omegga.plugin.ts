@@ -829,6 +829,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
           this.zones = this.zones.filter((z) => z.name !== what);
           await this.store.set('zones', this.zones);
           w('Battleship zone ', cyan(what), ' removed.');
+        } else if (args[1] === 'list') {
+          w('List of zones:');
+          for (const zone of this.zones) {
+            w('- ', cyan(zone.name));
+          }
         }
       } else {
         w(
