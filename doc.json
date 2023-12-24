@@ -1,0 +1,44 @@
+{
+  "name": "battleship",
+  "description": "Battleship... the game",
+  "author": "voximity",
+  "config": {
+    "round_length": {
+      "description": "The length of a round in seconds.",
+      "type": "number",
+      "default": 15
+    },
+    "setup_timeout": {
+      "description": "The amount of time (in seconds) players get to set their board up.",
+      "type": "number",
+      "default": 60
+    },
+    "invite_timeout": {
+      "description": "How long after an invite is sent that it will timeout.",
+      "type": "number",
+      "default": 45
+    },
+    "auth_setup": {
+      "description": "Roles that are authorized to set up Battleship.",
+      "type": "list",
+      "itemType": "role",
+      "default": []
+    },
+    "broadcast": {
+      "description": "Whether or not to broadcast important events in Battleship games.",
+      "type": "boolean",
+      "default": true
+    },
+    "enforce_max_zone_dist": {
+      "description": "Whether or not to forfeit games automatically when players move too far away from their play space.",
+      "type": "boolean",
+      "default": true
+    },
+    "max_zone_dist": {
+      "description": "The maximum distance (in studs) a player who is in a game can be from their zone space before the game is forfeited.",
+      "type": "number",
+      "default": 10
+    }
+  },
+  "commands": []
+}
