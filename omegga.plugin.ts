@@ -606,7 +606,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
       }, 2500);
     }
 
-    this.omegga.on('cmd:battleship', async (speaker: string, ...args: string[]) => {
+    const onCommand = async (speaker: string, ...args: string[]) => {
       const player = this.omegga.getPlayer(speaker);
 
       // check for setup promises
@@ -648,16 +648,15 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         }
 
         // if the player is themselves
-        // TODO: UNCOMMENT FOR RELEASE
-        // if (target.id === player.id) {
-        //   w(
-        //     red("You can't play by yourself!"),
-        //     ' You can send an invite to the whole server with ',
-        //     code('/battleship'),
-        //     '.'
-        //   );
-        //   return;
-        // }
+        if (target.id === player.id) {
+          w(
+            red("You can't play by yourself!"),
+            ' You can send an invite to the whole server with ',
+            code('/battleship'),
+            '.'
+          );
+          return;
+        }
 
         // if the player already has an outgoing invite to that player
         if (this.invites.some(({ from, to }) => from === player.id && to === target.id)) {
@@ -843,6 +842,14 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
           '.'
         );
       }
+    };
+
+    this.omegga.on('cmd:battleship', async (speaker: string, ...args: string[]) => {
+      try {
+        await onCommand(speaker, ...args);
+      } catch (e) {
+        console.error('Error occurred while handling Battleship command:', e);
+      }
     });
 
     this.omegga.on('leave', async (player) => {
@@ -862,158 +869,164 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     });
 
     this.omegga.on('interact', async ({ player, message }) => {
-      const match = message.match(/^_bs:(\w+)_(\d):(.+)$/);
-      if (!match) return;
+      try {
+        const match = message.match(/^_bs:(\w+)_(\d):(.+)$/);
+        if (!match) return;
 
-      const game = this.games.find((g) => g.interactId === match[1]);
-      if (!game || !game.active) return;
+        const game = this.games.find((g) => g.interactId === match[1]);
+        if (!game || !game.active) return;
 
-      const pid = Number(match[2]);
-      if (player.id !== game.players[pid]) return;
+        const pid = Number(match[2]);
+        if (player.id !== game.players[pid]) return;
 
-      const zone = this.zones.find((z) => z.name === game.zone);
+        const zone = this.zones.find((z) => z.name === game.zone);
 
-      if (game.state.type === 'setup') {
-        // ignore if we already confirmed our setup
-        if (game.state.confirmed[pid]) {
-          this.omegga.middlePrint(player.id, red('You already confirmed your setup!'));
-          return;
-        }
-
-        // setup phase, let player place ships
-        if (match[3] === 'c') {
-          // confirm ship placements
-          if (game.state.boards[pid].length !== SHIPS.length) {
-            this.omegga.middlePrint(
-              player.id,
-              red('You must place all of your ships to continue!')
-            );
+        if (game.state.type === 'setup') {
+          // ignore if we already confirmed our setup
+          if (game.state.confirmed[pid]) {
+            this.omegga.middlePrint(player.id, red('You already confirmed your setup!'));
             return;
           }
 
-          game.state.confirmed[pid] = true;
-          if (game.state.confirmed.every((c) => c)) {
-            // start the game
-            await this.finishGameSetup(game);
+          // setup phase, let player place ships
+          if (match[3] === 'c') {
+            // confirm ship placements
+            if (game.state.boards[pid].length !== SHIPS.length) {
+              this.omegga.middlePrint(
+                player.id,
+                red('You must place all of your ships to continue!')
+              );
+              return;
+            }
+
+            game.state.confirmed[pid] = true;
+            if (game.state.confirmed.every((c) => c)) {
+              // start the game
+              await this.finishGameSetup(game);
+            } else {
+              this.omegga.middlePrint(
+                player.id,
+                '<b>Board confirmed!</> Waiting for your opponent to finish...'
+              );
+              this.omegga.whisper(
+                this.omegga.getPlayer(game.players[1 - pid]),
+                yellow('Your opponent has finished placing their ships! ') +
+                  'When you are finished, press the green button to confirm.'
+              );
+            }
+            return;
+          }
+
+          if (match[3].startsWith('s')) {
+            // remove the ship
+            const i = Number(match[3].slice(1));
+            game.state.boards[pid] = game.state.boards[pid].filter((s) => s.ship !== i);
+
+            this.omegga.clearBricks(game.uuids[`p${pid}s${i}`], true);
+
+            const save = genShip(i, game.uuids[`p${pid}s${i}`]);
+            moveSave(save, zone.pos[pid], zone.rotation[pid]);
+            await this.omegga.loadSaveData(save, { quiet: true });
+
+            this.omegga.middlePrint(player.id, `Removed your <b>${SHIPS[i].name}</>.`);
+            return;
+          }
+
+          const coords = match[3].split(':').map(Number) as [number, number];
+          if (game.state.selected[pid]) {
+            // check to see if the newly selected point is in the same line
+            const [fx, fy] = game.state.selected[pid];
+            const [tx, ty] = coords;
+
+            game.state.selected[pid] = null;
+            this.omegga.clearBricks(game.uuids[`p${pid}s`], true);
+
+            const shipsUsed = game.state.boards[pid].map((s) => s.ship);
+            const shipsAvailable = [...SHIPS]
+              .map((_, i) => i)
+              .filter((i) => !shipsUsed.includes(i));
+            let rotated = false;
+            let len = 0;
+            if (fy === ty) {
+              len = Math.abs(fx - tx) + 1;
+            } else if (fx === tx) {
+              len = Math.abs(fy - ty) + 1;
+              rotated = true;
+            } else {
+              this.omegga.middlePrint(player.id, red('Your ship must be straight!'));
+              return;
+            }
+
+            const candidateIdx = shipsAvailable.find((i) => SHIPS[i].length === len);
+            if (candidateIdx === undefined) {
+              this.omegga.middlePrint(
+                player.id,
+                red(`You don't have any ships left that are ${len} units long!`)
+              );
+              return;
+            }
+
+            const ship = { x: Math.min(fx, tx), y: Math.min(fy, ty), ship: candidateIdx, rotated };
+            if (intersectsWithSetupBoard(game.state.boards[pid], ship)) {
+              this.omegga.middlePrint(player.id, red('A ship is already in that spot!'));
+              return;
+            }
+
+            game.state.boards[pid].push(ship);
+
+            this.omegga.clearBricks(game.uuids[`p${pid}s${candidateIdx}`], true);
+            const save = genShip(candidateIdx, game.uuids[`p${pid}s${candidateIdx}`], {
+              interactId: game.interactId + '_' + pid,
+              pos: [ship.x, ship.y],
+              rotated,
+            });
+            moveSave(save, zone.pos[pid], zone.rotation[pid]);
+            await this.omegga.loadSaveData(save, { quiet: true });
+
+            this.omegga.middlePrint(player.id, `Placed your <b>${SHIPS[candidateIdx].name}</>.`);
           } else {
-            this.omegga.middlePrint(
-              player.id,
-              '<b>Board confirmed!</> Waiting for your opponent to finish...'
-            );
-            this.omegga.whisper(
-              this.omegga.getPlayer(game.players[1 - pid]),
-              yellow('Your opponent has finished placing their ships! ') +
-                'When you are finished, press the green button to confirm.'
-            );
+            // create the selection brick
+            game.state.selected[pid] = coords as [number, number];
+
+            const save = genSelection(...coords, game.uuids[`p${pid}s`]);
+            moveSave(save, zone.pos[pid], zone.rotation[pid]);
+            await this.omegga.loadSaveData(save, { quiet: true });
+
+            this.omegga.middlePrint(player.id, 'Click another cell to place your ship.');
           }
-          return;
-        }
-
-        if (match[3].startsWith('s')) {
-          // remove the ship
-          const i = Number(match[3].slice(1));
-          game.state.boards[pid] = game.state.boards[pid].filter((s) => s.ship !== i);
-
-          this.omegga.clearBricks(game.uuids[`p${pid}s${i}`], true);
-
-          const save = genShip(i, game.uuids[`p${pid}s${i}`]);
-          moveSave(save, zone.pos[pid], zone.rotation[pid]);
-          await this.omegga.loadSaveData(save, { quiet: true });
-
-          this.omegga.middlePrint(player.id, `Removed your <b>${SHIPS[i].name}</>.`);
-          return;
-        }
-
-        const coords = match[3].split(':').map(Number) as [number, number];
-        if (game.state.selected[pid]) {
-          // check to see if the newly selected point is in the same line
-          const [fx, fy] = game.state.selected[pid];
-          const [tx, ty] = coords;
-
-          game.state.selected[pid] = null;
-          this.omegga.clearBricks(game.uuids[`p${pid}s`], true);
-
-          const shipsUsed = game.state.boards[pid].map((s) => s.ship);
-          const shipsAvailable = [...SHIPS].map((_, i) => i).filter((i) => !shipsUsed.includes(i));
-          let rotated = false;
-          let len = 0;
-          if (fy === ty) {
-            len = Math.abs(fx - tx) + 1;
-          } else if (fx === tx) {
-            len = Math.abs(fy - ty) + 1;
-            rotated = true;
-          } else {
-            this.omegga.middlePrint(player.id, red('Your ship must be straight!'));
+        } else if (game.state.type === 'play') {
+          if (pid !== game.state.playerTurn) {
+            this.omegga.middlePrint(player.id, red('It is not your turn!'));
             return;
           }
 
-          const candidateIdx = shipsAvailable.find((i) => SHIPS[i].length === len);
-          if (candidateIdx === undefined) {
-            this.omegga.middlePrint(
-              player.id,
-              red(`You don't have any ships left that are ${len} units long!`)
-            );
+          if (match[3] === 'c') {
+            try {
+              await this.gameAct(game);
+            } catch (e) {
+              console.error(e);
+            }
             return;
           }
 
-          const ship = { x: Math.min(fx, tx), y: Math.min(fy, ty), ship: candidateIdx, rotated };
-          if (intersectsWithSetupBoard(game.state.boards[pid], ship)) {
-            this.omegga.middlePrint(player.id, red('A ship is already in that spot!'));
-            return;
-          }
+          const coords = match[3].split(':').map(Number) as [number, number];
 
-          game.state.boards[pid].push(ship);
-
-          this.omegga.clearBricks(game.uuids[`p${pid}s${candidateIdx}`], true);
-          const save = genShip(candidateIdx, game.uuids[`p${pid}s${candidateIdx}`], {
-            interactId: game.interactId + '_' + pid,
-            pos: [ship.x, ship.y],
-            rotated,
-          });
-          moveSave(save, zone.pos[pid], zone.rotation[pid]);
-          await this.omegga.loadSaveData(save, { quiet: true });
-
-          this.omegga.middlePrint(player.id, `Placed your <b>${SHIPS[candidateIdx].name}</>.`);
-        } else {
           // create the selection brick
-          game.state.selected[pid] = coords as [number, number];
+          game.state.selected = coords as [number, number];
 
+          this.omegga.clearBricks(game.uuids[`p${pid}s`], true);
           const save = genSelection(...coords, game.uuids[`p${pid}s`]);
+          moveSave(save, RIGHT_BOARD_OFFSET);
           moveSave(save, zone.pos[pid], zone.rotation[pid]);
           await this.omegga.loadSaveData(save, { quiet: true });
 
-          this.omegga.middlePrint(player.id, 'Click another cell to place your ship.');
+          this.omegga.middlePrint(
+            player.id,
+            'Click the green button to confirm you want to hit this target.'
+          );
         }
-      } else if (game.state.type === 'play') {
-        if (pid !== game.state.playerTurn) {
-          this.omegga.middlePrint(player.id, red('It is not your turn!'));
-          return;
-        }
-
-        if (match[3] === 'c') {
-          try {
-            await this.gameAct(game);
-          } catch (e) {
-            console.error(e);
-          }
-          return;
-        }
-
-        const coords = match[3].split(':').map(Number) as [number, number];
-
-        // create the selection brick
-        game.state.selected = coords as [number, number];
-
-        this.omegga.clearBricks(game.uuids[`p${pid}s`], true);
-        const save = genSelection(...coords, game.uuids[`p${pid}s`]);
-        moveSave(save, RIGHT_BOARD_OFFSET);
-        moveSave(save, zone.pos[pid], zone.rotation[pid]);
-        await this.omegga.loadSaveData(save, { quiet: true });
-
-        this.omegga.middlePrint(
-          player.id,
-          'Click the green button to confirm you want to hit this target.'
-        );
+      } catch (e) {
+        console.error('Unexpected error while handling Battleship interaction:', e);
       }
     });
 
