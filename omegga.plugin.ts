@@ -572,35 +572,39 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         for (const game of this.games) {
           if (!game.active) continue;
 
-          const positions = await Promise.all(
-            game.players.map((id) => this.omegga.getPlayer(id).getPosition())
-          );
+          try {
+            const positions = await Promise.all(
+              game.players.map((id) => this.omegga.getPlayer(id).getPosition())
+            );
 
-          for (let i = 0; i < 2; i++) {
-            const player = this.omegga.getPlayer(game.players[i]);
-            const pos = positions[i];
-            const dest = game.playSpace[i];
-            const distSq = pos.map((c, i) => Math.pow(c - dest[i], 2)).reduce((a, c) => a + c, 0);
+            for (let i = 0; i < 2; i++) {
+              const player = this.omegga.getPlayer(game.players[i]);
+              const pos = positions[i];
+              const dest = game.playSpace[i];
+              const distSq = pos.map((c, i) => Math.pow(c - dest[i], 2)).reduce((a, c) => a + c, 0);
 
-            const warningDist = Math.pow(this.config.max_zone_dist * 10 * 0.5, 2);
-            const maxDist = Math.pow(this.config.max_zone_dist * 10, 2);
+              const warningDist = Math.pow(this.config.max_zone_dist * 10 * 0.5, 2);
+              const maxDist = Math.pow(this.config.max_zone_dist * 10, 2);
 
-            if (distSq > maxDist) {
-              // player forfeits game because they moved too far away
-              this.omegga.whisper(
-                player,
-                red('The game ended because you moved too far away from your play space!')
-              );
-              this.forfeitGame(game, 1 - i);
-              break;
-            } else if (distSq > warningDist) {
-              this.omegga.whisper(
-                player,
-                red('You are moving too far from your play space!') +
-                  ' Return or you will forfeit your game.'
-              );
-              break;
+              if (distSq > maxDist) {
+                // player forfeits game because they moved too far away
+                this.omegga.whisper(
+                  player,
+                  red('The game ended because you moved too far away from your play space!')
+                );
+                this.forfeitGame(game, 1 - i);
+                break;
+              } else if (distSq > warningDist) {
+                this.omegga.whisper(
+                  player,
+                  red('You are moving too far from your play space!') +
+                    ' Return or you will forfeit your game.'
+                );
+                break;
+              }
             }
+          } catch (e) {
+            // ...
           }
         }
       }, 2500);
@@ -902,7 +906,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
             game.state.confirmed[pid] = true;
             if (game.state.confirmed.every((c) => c)) {
               // start the game
-              await this.finishGameSetup(game);
+              try {
+                await this.finishGameSetup(game);
+              } catch (e) {
+                console.error('Error caught starting game:', e);
+              }
             } else {
               this.omegga.middlePrint(
                 player.id,
