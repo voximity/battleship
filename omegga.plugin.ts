@@ -102,7 +102,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
       const timeout = setTimeout(() => {
         delete this.setupPromises[id];
         reject('timed_out');
-      }, 30_000);
+      }, 120_000);
 
       this.setupPromises[id] = (...data: string[]) => {
         clearTimeout(timeout);
@@ -870,7 +870,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
 
     this.omegga.on('interact', async ({ player, message }) => {
       try {
-        const match = message.match(/^_bs:(\w+)_(\d):(.+)$/);
+        const match = message?.match(/^_bs:(\w+)_(\d):(.+)$/);
         if (!match) return;
 
         const game = this.games.find((g) => g.interactId === match[1]);
@@ -1029,8 +1029,6 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         console.error('Unexpected error while handling Battleship interaction:', e);
       }
     });
-
-    // TODO: forfeit if any player moves too far away from their play space
 
     return { registeredCommands: ['battleship'] };
   }
