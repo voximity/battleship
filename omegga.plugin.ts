@@ -355,10 +355,8 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     if (!game.state.selected) {
       // round timeout
       if (force) {
-        this.omegga.clearBricks(game.uuids['p0s'], true);
-        this.omegga.clearBricks(game.uuids['p1s'], true);
-        this.omegga.clearBricks(game.uuids['p0c'], true);
-        this.omegga.clearBricks(game.uuids['p1c'], true);
+        this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}s`], true);
+        this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}c`], true);
 
         if (game.state.timeout !== undefined) {
           clearTimeout(game.state.timeout);
@@ -391,10 +389,8 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         if (!force) return false;
       }
 
-      this.omegga.clearBricks(game.uuids['p0s'], true);
-      this.omegga.clearBricks(game.uuids['p1s'], true);
-      this.omegga.clearBricks(game.uuids['p0c'], true);
-      this.omegga.clearBricks(game.uuids['p1c'], true);
+      this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}s`], true);
+      this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}c`], true);
 
       if (game.state.timeout !== undefined) {
         clearTimeout(game.state.timeout);
