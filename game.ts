@@ -338,6 +338,6 @@ export const genMarker = (
         },
       },
     ],
-    colors: [mine !== miss ? [255, 0, 0, 255] : [0, 255, 0, 255]],
+    colors: [miss ? [255, 255, 255, 255] : [255, 0, 0, 255]],
   };
 };
