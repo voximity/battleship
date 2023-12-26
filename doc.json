@@ -11,7 +11,7 @@
     "setup_timeout": {
       "description": "The amount of time (in seconds) players get to set their board up.",
       "type": "number",
-      "default": 60
+      "default": 120
     },
     "invite_timeout": {
       "description": "How long after an invite is sent that it will timeout.",

@@ -226,6 +226,16 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
       );
     }
 
+    for (const id of players) {
+      const p = this.omegga.getPlayer(id);
+      this.omegga.whisper(
+        p,
+        `You have ${yellow(
+          this.config.setup_timeout.toString() + ' seconds'
+        )} to set up your ships!`
+      );
+    }
+
     return game;
   };
 
@@ -242,8 +252,12 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
 
     // clear game bricks
     for (const uuid of Object.values(game.uuids)) {
+      if (uuid === game.uuids.root) continue;
       this.omegga.clearBricks(uuid, true);
     }
+
+    // clear root uuid last
+    this.omegga.clearBricks(game.uuids.root, true);
 
     // load boards in for both players
     const zone = this.zones.find((z) => z.name === game.zone);
@@ -323,7 +337,10 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
 
     this.omegga.whisper(
       this.omegga.getPlayer(game.players[to]),
-      yellow('It is your turn!') + ' Use the board on the right to shoot at your opponent.'
+      yellow('It is your turn!') +
+        ' Use the board on the right to shoot at your opponent within ' +
+        yellow(this.config.round_length.toString() + ' seconds') +
+        '.'
     );
 
     const start = Date.now();
@@ -334,7 +351,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         return;
       }
 
-      if (Date.now() - start > this.config.round_length * 1_000 - 3_000) {
+      if (Date.now() - start > this.config.round_length * 1_000 - 5_000) {
         const s = Math.ceil((this.config.round_length * 1_000 - (Date.now() - start)) / 1_000);
         this.omegga.whisper(
           this.omegga.getPlayer(game.players[to]),
