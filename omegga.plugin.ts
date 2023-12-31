@@ -4,6 +4,8 @@ import {
   ASSET_PLACE_SHIPS,
   ASSET_THEIR_SHOTS,
   ASSET_YOUR_SHOTS,
+  Region,
+  boundsToRegion,
   deepClone,
   mergeSave,
   moveSave,
@@ -28,6 +30,7 @@ import OmeggaPlugin, { OL, PS, PC, OmeggaPlayer, Vector } from 'omegga';
 
 const { random: uuid } = OMEGGA_UTIL.uuid;
 const { bold, red, yellow, cyan, code } = OMEGGA_UTIL.chat;
+const { getBounds } = OMEGGA_UTIL.brick;
 
 type Config = {
   round_length: number;
@@ -119,41 +122,39 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
 
     const id = randomId();
 
-    const uuids = {
-      root: this.takeUuid(),
-      p0s: this.takeUuid(),
-      p1s: this.takeUuid(),
-      p0c: this.takeUuid(),
-      p1c: this.takeUuid(),
-    };
-    for (let i = 0; i < 5; i++) {
-      uuids['p0s' + i] = this.takeUuid();
-      uuids['p1s' + i] = this.takeUuid();
-    }
+    const rootUuid = this.takeUuid();
+    const regions = {};
 
     // generate both boards
     const boards = [];
     for (let i = 0; i < 2; i++) {
-      let save = genBoard(uuids.root, id + '_' + i);
+      let save = genBoard(rootUuid, id + '_' + i);
 
       // add board outline
       const board = deepClone(ASSET_BOARD);
-      board.brick_owners = [{ id: uuids[`p${i}c`], name: 'Battleship', bricks: 0 }];
+      board.brick_owners = [{ id: rootUuid, name: 'Battleship', bricks: 0 }];
       save = mergeSave(save, board);
 
       // add text
       const text = deepClone(ASSET_PLACE_SHIPS);
-      text.brick_owners = [{ id: uuids[`p${i}c`], name: 'Battleship', bricks: 0 }];
+      text.brick_owners = [{ id: rootUuid, name: 'Battleship', bricks: 0 }];
       save = mergeSave(save, text);
 
       // add setup ships
       for (let j = 0; j < 5; j++) {
-        save = mergeSave(save, genShip(j, uuids[`p${i}s${j}`]));
+        const ship = genShip(j, rootUuid);
+
+        // this is ridiculously cursed... let's not talk about this
+        const cloned = deepClone(ship);
+        moveSave(cloned, zone.pos[i], zone.rotation[i]);
+        regions[`p${i}s${j}`] = boundsToRegion(getBounds(cloned));
+
+        save = mergeSave(save, ship);
       }
 
       // add confirm button
       const confirm = deepClone(ASSET_CONFIRM);
-      confirm.brick_owners = [{ id: uuids[`p${i}c`], name: 'Battleship', bricks: 0 }];
+      confirm.brick_owners = [{ id: rootUuid, name: 'Battleship', bricks: 0 }];
       for (const b of confirm.bricks) {
         b.owner_index = 1;
         (b.components ??= {}).BCD_Interact = {
@@ -187,7 +188,8 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
       zone: zone.name,
       playSpace: playSpace as [Vector, Vector],
       interactId: id,
-      uuids,
+      uuid: rootUuid,
+      regions,
       state: {
         type: 'setup',
         boards: [[], []],
@@ -251,13 +253,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     };
 
     // clear game bricks
-    for (const uuid of Object.values(game.uuids)) {
-      if (uuid === game.uuids.root) continue;
-      this.omegga.clearBricks(uuid, true);
-    }
-
-    // clear root uuid last
-    this.omegga.clearBricks(game.uuids.root, true);
+    this.omegga.clearBricks(game.uuid, true);
 
     // load boards in for both players
     const zone = this.zones.find((z) => z.name === game.zone);
@@ -265,25 +261,25 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     const boards = [];
     for (let i = 0; i < 2; i++) {
       // generate my board
-      let myBoard = genBoardWithShips(game.uuids.root, game.state.boards[i].ships);
+      let myBoard = genBoardWithShips(game.uuid, game.state.boards[i].ships);
 
       const myBorder = deepClone(ASSET_BOARD);
-      myBorder.brick_owners = [{ id: game.uuids.root, name: 'Battleship', bricks: 0 }];
+      myBorder.brick_owners = [{ id: game.uuid, name: 'Battleship', bricks: 0 }];
       myBoard = mergeSave(myBoard, myBorder);
 
       const myText = deepClone(ASSET_THEIR_SHOTS);
-      myText.brick_owners = [{ id: game.uuids.root, name: 'Battleship', bricks: 0 }];
+      myText.brick_owners = [{ id: game.uuid, name: 'Battleship', bricks: 0 }];
       myBoard = mergeSave(myBoard, myText);
 
       // generate opponent board
-      let opBoard = genBoard(game.uuids.root, game.interactId + '_' + i);
+      let opBoard = genBoard(game.uuid, game.interactId + '_' + i);
 
       const opBorder = deepClone(ASSET_BOARD);
-      opBorder.brick_owners = [{ id: game.uuids.root, name: 'Battleship', bricks: 0 }];
+      opBorder.brick_owners = [{ id: game.uuid, name: 'Battleship', bricks: 0 }];
       opBoard = mergeSave(opBoard, opBorder);
 
       const opText = deepClone(ASSET_YOUR_SHOTS);
-      opText.brick_owners = [{ id: game.uuids.root, name: 'Battleship', bricks: 0 }];
+      opText.brick_owners = [{ id: game.uuid, name: 'Battleship', bricks: 0 }];
       opBoard = mergeSave(opBoard, opText);
 
       // move boards and merge
@@ -320,7 +316,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     const zone = this.zones.find((z) => z.name === game.zone);
 
     const confirm = deepClone(ASSET_CONFIRM);
-    confirm.brick_owners = [{ id: game.uuids[`p${to}c`], name: 'Battleship', bricks: 0 }];
+    confirm.brick_owners = [{ id: game.uuid, name: 'Battleship', bricks: 0 }];
     delete confirm.components;
     for (const b of confirm.bricks) {
       b.owner_index = 1;
@@ -333,6 +329,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
 
     moveSave(confirm, RIGHT_BOARD_OFFSET);
     moveSave(confirm, zone.pos[to], zone.rotation[to]);
+    game.regions[`p${to}c`] = boundsToRegion(getBounds(confirm));
     await this.omegga.loadSaveData(confirm, { quiet: true });
 
     this.omegga.whisper(
@@ -361,6 +358,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     }, 1_000);
   };
 
+  clearRegion = (region?: Region) => {
+    if (!region) return;
+    this.omegga.clearRegion(region);
+  };
+
   gameAct = async (game: Game, force?: boolean): Promise<boolean> => {
     if (!game.active) return false;
     if (game.state.type !== 'play') return false;
@@ -372,8 +374,10 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     if (!game.state.selected) {
       // round timeout
       if (force) {
-        this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}s`], true);
-        this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}c`], true);
+        this.clearRegion(game.regions[`p${game.state.playerTurn}s`]);
+        this.clearRegion(game.regions[`p${game.state.playerTurn}c`]);
+        delete game.regions[`p${game.state.playerTurn}s`];
+        delete game.regions[`p${game.state.playerTurn}c`];
 
         if (game.state.timeout !== undefined) {
           clearTimeout(game.state.timeout);
@@ -406,8 +410,10 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         if (!force) return false;
       }
 
-      this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}s`], true);
-      this.omegga.clearBricks(game.uuids[`p${game.state.playerTurn}c`], true);
+      this.clearRegion(game.regions[`p${game.state.playerTurn}s`]);
+      this.clearRegion(game.regions[`p${game.state.playerTurn}c`]);
+      delete game.regions[`p${game.state.playerTurn}s`];
+      delete game.regions[`p${game.state.playerTurn}c`];
 
       if (game.state.timeout !== undefined) {
         clearTimeout(game.state.timeout);
@@ -418,11 +424,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         game.state.boards[1 - game.state.playerTurn].misses.push(game.state.selected);
 
         // show miss brick on both boards
-        const markerA = genMarker(...game.state.selected, game.uuids.root, false, true);
+        const markerA = genMarker(...game.state.selected, game.uuid, false, true);
         moveSave(markerA, RIGHT_BOARD_OFFSET);
         moveSave(markerA, zone.pos[game.state.playerTurn], zone.rotation[game.state.playerTurn]);
 
-        const markerB = genMarker(...game.state.selected, game.uuids.root, true, true);
+        const markerB = genMarker(...game.state.selected, game.uuid, true, true);
         moveSave(markerB, LEFT_BOARD_OFFSET);
         moveSave(
           markerB,
@@ -439,11 +445,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         res.ship.hits.push(res.at);
 
         // show hit brick on both boards
-        const markerA = genMarker(...game.state.selected, game.uuids.root, false, false);
+        const markerA = genMarker(...game.state.selected, game.uuid, false, false);
         moveSave(markerA, RIGHT_BOARD_OFFSET);
         moveSave(markerA, zone.pos[game.state.playerTurn], zone.rotation[game.state.playerTurn]);
 
-        const markerB = genMarker(...game.state.selected, game.uuids.root, true, false);
+        const markerB = genMarker(...game.state.selected, game.uuid, true, false);
         moveSave(markerB, LEFT_BOARD_OFFSET);
         moveSave(
           markerB,
@@ -555,10 +561,8 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
     }
 
     // clear bricks from the game
-    Object.values(game.uuids).forEach((uuid) => {
-      this.freeUuid(uuid);
-      this.omegga.clearBricks(uuid, true);
-    });
+    this.freeUuid(game.uuid);
+    this.omegga.clearBricks(game.uuid, true);
 
     // remove the game from the list of games
     this.games = this.games.filter((g) => g !== game);
@@ -665,15 +669,15 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         }
 
         // if the player is themselves
-        if (target.id === player.id) {
-          w(
-            red("You can't play by yourself!"),
-            ' You can send an invite to the whole server with ',
-            code('/battleship'),
-            '.'
-          );
-          return;
-        }
+        // if (target.id === player.id) {
+        //   w(
+        //     red("You can't play by yourself!"),
+        //     ' You can send an invite to the whole server with ',
+        //     code('/battleship'),
+        //     '.'
+        //   );
+        //   return;
+        // }
 
         // if the player already has an outgoing invite to that player
         if (this.invites.some(({ from, to }) => from === player.id && to === target.id)) {
@@ -943,10 +947,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
             const i = Number(match[3].slice(1));
             game.state.boards[pid] = game.state.boards[pid].filter((s) => s.ship !== i);
 
-            this.omegga.clearBricks(game.uuids[`p${pid}s${i}`], true);
+            this.clearRegion(game.regions[`p${pid}s${i}`]);
 
-            const save = genShip(i, game.uuids[`p${pid}s${i}`]);
+            const save = genShip(i, game.uuid);
             moveSave(save, zone.pos[pid], zone.rotation[pid]);
+            game.regions[`p${pid}s${i}`] = boundsToRegion(getBounds(save));
             await this.omegga.loadSaveData(save, { quiet: true });
 
             this.omegga.middlePrint(player.id, `Removed your <b>${SHIPS[i].name}</>.`);
@@ -960,7 +965,7 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
             const [tx, ty] = coords;
 
             game.state.selected[pid] = null;
-            this.omegga.clearBricks(game.uuids[`p${pid}s`], true);
+            this.clearRegion(game.regions[`p${pid}s`]); // selection
 
             const shipsUsed = game.state.boards[pid].map((s) => s.ship);
             const shipsAvailable = [...SHIPS]
@@ -995,13 +1000,14 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
 
             game.state.boards[pid].push(ship);
 
-            this.omegga.clearBricks(game.uuids[`p${pid}s${candidateIdx}`], true);
-            const save = genShip(candidateIdx, game.uuids[`p${pid}s${candidateIdx}`], {
+            this.clearRegion(game.regions[`p${pid}s${candidateIdx}`]); // clear ship from left
+            const save = genShip(candidateIdx, game.uuid, {
               interactId: game.interactId + '_' + pid,
               pos: [ship.x, ship.y],
               rotated,
             });
             moveSave(save, zone.pos[pid], zone.rotation[pid]);
+            game.regions[`p${pid}s${candidateIdx}`] = boundsToRegion(getBounds(save));
             await this.omegga.loadSaveData(save, { quiet: true });
 
             this.omegga.middlePrint(player.id, `Placed your <b>${SHIPS[candidateIdx].name}</>.`);
@@ -1009,8 +1015,9 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
             // create the selection brick
             game.state.selected[pid] = coords as [number, number];
 
-            const save = genSelection(...coords, game.uuids[`p${pid}s`]);
+            const save = genSelection(...coords, game.uuid);
             moveSave(save, zone.pos[pid], zone.rotation[pid]);
+            game.regions[`p${pid}s`] = boundsToRegion(getBounds(save));
             await this.omegga.loadSaveData(save, { quiet: true });
 
             this.omegga.middlePrint(player.id, 'Click another cell to place your ship.');
@@ -1035,10 +1042,11 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
           // create the selection brick
           game.state.selected = coords as [number, number];
 
-          this.omegga.clearBricks(game.uuids[`p${pid}s`], true);
-          const save = genSelection(...coords, game.uuids[`p${pid}s`]);
+          this.clearRegion(game.regions[`p${pid}s`]);
+          const save = genSelection(...coords, game.uuid);
           moveSave(save, RIGHT_BOARD_OFFSET);
           moveSave(save, zone.pos[pid], zone.rotation[pid]);
+          game.regions[`p${pid}s`] = boundsToRegion(getBounds(save));
           await this.omegga.loadSaveData(save, { quiet: true });
 
           this.omegga.middlePrint(

@@ -1,4 +1,5 @@
 import { Brick, UnrealColor, Vector, WriteSaveObject } from 'omegga';
+import { Region } from 'save';
 const { rotate_z } = OMEGGA_UTIL.brick;
 
 export const BOARD_DIM = 10;
@@ -25,7 +26,8 @@ export type Game = {
   zone: string;
   playSpace: [Vector, Vector];
   interactId: string;
-  uuids: { root: string } & Record<string, string>;
+  uuid: string;
+  regions: Record<string, Region>;
   state: GameState;
 };
 

@@ -1,8 +1,16 @@
-import { Brick, BrsV10, Vector, WriteSaveObject } from 'omegga';
+import { Brick, BrsV10, IBrickBounds, Vector, WriteSaveObject } from 'omegga';
 import fs from 'fs';
 import { BOARD_DIM, CELL_SIZE } from './game';
 
 const { rotate_z } = OMEGGA_UTIL.brick;
+
+export type Region = { center: Vector; extent: Vector };
+export function boundsToRegion(bounds: IBrickBounds): Region {
+  return {
+    center: bounds.center,
+    extent: bounds.maxBound.map((c, i) => c - bounds.center[i]) as Vector,
+  };
+}
 
 export const moveSave = (save: WriteSaveObject, to: Vector, rotation = 0) => {
   const rotate = rotate_z(rotation);
