@@ -669,15 +669,15 @@ export default class Plugin implements OmeggaPlugin<Config, Storage> {
         }
 
         // if the player is themselves
-        // if (target.id === player.id) {
-        //   w(
-        //     red("You can't play by yourself!"),
-        //     ' You can send an invite to the whole server with ',
-        //     code('/battleship'),
-        //     '.'
-        //   );
-        //   return;
-        // }
+        if (target.id === player.id) {
+          w(
+            red("You can't play by yourself!"),
+            ' You can send an invite to a player with ',
+            code('/battleship invite PLAYER NAME'),
+            '.'
+          );
+          return;
+        }
 
         // if the player already has an outgoing invite to that player
         if (this.invites.some(({ from, to }) => from === player.id && to === target.id)) {
